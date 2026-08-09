@@ -1,4 +1,4 @@
-# @shihaoshen/agent-mcp-for-chat
+# Agent MCP for Chat
 
 An MCP server that gives any chat AI agent capabilities: reading and writing files, precise editing, running commands, and searching code.
 
