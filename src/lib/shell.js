@@ -35,8 +35,20 @@ const POSIX_SHELL_CANDIDATES = {
 const WIN32_FALLBACK = { shell: process.env.COMSPEC || "cmd.exe", args: ["/d", "/s", "/c"] };
 const POSIX_FALLBACK = { shell: process.env.SHELL || "/bin/sh", args: ["-c"] };
 const BASH_ARGS = ["-c"];
+const POWERSHELL_ARGS = ["-NoLogo", "-NoProfile", "-Command"];
+
+/**
+ * Shells the caller may explicitly pick per platform (bash tool `shell`
+ * parameter). Anything not listed here falls back to auto-detection.
+ */
+export const SUPPORTED_SHELLS = {
+	win32: ["bash", "pwsh", "powershell", "cmd"],
+	darwin: ["bash", "fish", "zsh"],
+	linux: ["bash", "fish", "zsh"],
+};
 
 let cachedShellConfig;
+const choiceCache = new Map();
 
 /** Return true if `command` resolves to an executable on PATH. */
 function isOnPath(command) {
@@ -138,6 +150,55 @@ export function getShellConfig() {
 	return cachedShellConfig;
 }
 
+/**
+ * Resolve an explicitly requested shell (bash tool `shell` parameter) to a
+ * { shell, args } spawn config. Throws if the shell is not supported on this
+ * platform or cannot be located. Results are cached per shell name.
+ */
+export function resolveShellChoice(name) {
+	const supported = SUPPORTED_SHELLS[process.platform] ?? [];
+	if (!supported.includes(name)) {
+		throw new Error(
+			`Shell "${name}" is not supported on ${process.platform}. Supported shells: ${supported.join(", ")}`,
+		);
+	}
+	if (choiceCache.has(name)) return choiceCache.get(name);
+
+	let config;
+	switch (name) {
+		case "bash": {
+			if (process.platform === "win32") {
+				const gitBash = findGitBashWindows();
+				if (!gitBash) {
+					throw new Error('Shell "bash" not found: no Git for Windows bash.exe could be located');
+				}
+				config = { shell: gitBash, args: BASH_ARGS };
+			} else {
+				if (!isOnPath("bash")) throw new Error('Shell "bash" not found on PATH');
+				config = { shell: "bash", args: BASH_ARGS };
+			}
+			break;
+		}
+		case "pwsh":
+		case "powershell": {
+			if (!isOnPath(name)) throw new Error(`Shell "${name}" not found on PATH`);
+			config = { shell: name, args: POWERSHELL_ARGS };
+			break;
+		}
+		case "cmd": {
+			config = WIN32_FALLBACK;
+			break;
+		}
+		default: {
+			// fish, zsh, and any future POSIX additions: plain `name -c`.
+			if (!isOnPath(name)) throw new Error(`Shell "${name}" not found on PATH`);
+			config = { shell: name, args: ["-c"] };
+		}
+	}
+	choiceCache.set(name, config);
+	return config;
+}
+
 /** Kill a process and its children. */
 export function killProcessTree(child) {
 	if (!child.pid || child.killed) return;
@@ -164,10 +225,12 @@ export function killProcessTree(child) {
 /**
  * Execute a shell command, streaming stdout+stderr into onData.
  * Returns { exitCode } or throws Error("timeout:<seconds>") on timeout.
+ * `shellName` optionally pins the shell (see SUPPORTED_SHELLS); otherwise
+ * the auto-detected platform default is used.
  */
-export async function execShell(command, cwd, { onData, timeout } = {}) {
+export async function execShell(command, cwd, { onData, timeout, shellName } = {}) {
 	const timeoutMs = resolveTimeoutMs(timeout);
-	const { shell, args } = getShellConfig();
+	const { shell, args } = shellName ? resolveShellChoice(shellName) : getShellConfig();
 
 	return new Promise((resolve, reject) => {
 		const child = spawn(shell, [...args, command], {

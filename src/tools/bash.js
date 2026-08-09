@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { resolveDir } from "../lib/paths.js";
-import { execShell } from "../lib/shell.js";
+import { execShell, SUPPORTED_SHELLS } from "../lib/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "../lib/truncate.js";
+
+const SHELL_CHOICES = SUPPORTED_SHELLS[process.platform] ?? ["bash"];
 
 export const bashTool = {
 	name: "bash",
-	description: `Execute a shell command in the directory given by the cwd parameter. Returns stdout and stderr combined. Output is truncated to the last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Optionally provide a timeout in seconds (no default timeout).`,
+	description: `Execute a shell command in the directory given by the cwd parameter. Returns stdout and stderr combined. Output is truncated to the last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Optionally provide a timeout in seconds (no default timeout) and/or pick the shell via the shell parameter (default: auto-detected).`,
 	schema: {
 		command: z.string().describe("Shell command to execute"),
 		cwd: z
@@ -14,8 +16,14 @@ export const bashTool = {
 				"Absolute path of the directory to run the command in (e.g. 'D:\\projects\\my-app' or '/home/user/my-app')",
 			),
 		timeout: z.number().optional().describe("Timeout in seconds (optional, no default timeout)"),
+		shell: z
+			.enum(SHELL_CHOICES)
+			.optional()
+			.describe(
+				`Shell to run the command with (optional, default: auto-detected). Available on this platform: ${SHELL_CHOICES.join(", ")}`,
+			),
 	},
-	async execute({ command, cwd: cwdArg, timeout }) {
+	async execute({ command, cwd: cwdArg, timeout, shell }) {
 		const cwd = resolveDir(cwdArg);
 
 		// Accumulate output, keeping memory bounded: once we exceed the cap we
@@ -37,7 +45,7 @@ export const bashTool = {
 
 		let exitCode;
 		try {
-			const result = await execShell(command, cwd, { onData, timeout });
+			const result = await execShell(command, cwd, { onData, timeout, shellName: shell });
 			exitCode = result.exitCode;
 		} catch (err) {
 			if (err instanceof Error && err.message.startsWith("timeout:")) {

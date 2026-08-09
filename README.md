@@ -48,7 +48,7 @@ AI:  grep(pattern="TODO", path="D:\\projects\\my-app")    → directory to searc
 | `read` | Read a file (`path`, absolute) with `offset`/`limit` pagination (1-indexed); images (jpg/png/gif/webp/bmp) returned as attachments; truncated at 2000 lines / 50KB |
 | `write` | Write a file (`path`, absolute), auto-creating parent directories, overwriting existing files |
 | `edit` | Exact string replacement in a file (`path`, absolute): `edits: [{oldText, newText}]`; oldText must be unique in the file, edits must not overlap, applied atomically; preserves CRLF/LF line endings and BOM; returns a unified diff |
-| `bash` | Run a shell command in `cwd` (absolute, required) — Windows: cmd, Unix: sh; optional `timeout` (seconds, no default); output keeps the **tail** 2000 lines / 50KB; non-zero exit code reported as error |
+| `bash` | Run a shell command in `cwd` (absolute, required); optional `timeout` (seconds, no default); optional `shell` to pick the interpreter (Windows: `bash`/`pwsh`/`powershell`/`cmd`; Linux/macOS: `bash`/`fish`/`zsh`; default: auto-detected); output keeps the **tail** 2000 lines / 50KB; non-zero exit code reported as error |
 | `grep` | Regex/literal search in `path` (absolute file or directory) with `glob` filter, `ignoreCase`, `context` lines, `limit` (default 100); single lines truncated at 500 chars; skips binary files and node_modules/.git etc. |
 | `find` | Find files by glob pattern (`*`/`?`/`**` supported) under `path` (absolute directory), `limit` default 1000 |
 | `ls` | List directory `path` (absolute), alphabetical, directories suffixed with `/`, `limit` default 500 |

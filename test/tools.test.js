@@ -280,6 +280,21 @@ test("bash: non-zero exit code reports error", async () => {
 	await assert.rejects(() => bashTool.execute({ command: "exit 3", cwd: workDir }), /exited with code 3/);
 });
 
+test("bash: explicit shell selection runs the command", async () => {
+	// cmd is guaranteed on win32 (COMSPEC fallback); bash on POSIX platforms.
+	const shellName = process.platform === "win32" ? "cmd" : "bash";
+	const r = await bashTool.execute({ command: "echo explicit-shell", cwd: workDir, timeout: 30, shell: shellName });
+	assert.match(r.text, /explicit-shell/);
+});
+
+test("bash: rejects a shell unsupported on this platform", async () => {
+	const shellName = process.platform === "win32" ? "fish" : "cmd";
+	await assert.rejects(
+		() => bashTool.execute({ command: "echo hi", cwd: workDir, shell: shellName }),
+		/is not supported on/,
+	);
+});
+
 test("bash: timeout kills long-running command", async () => {
 	// git bash ships a real `sleep`; cmd/powershell/pwsh don't, so `ping` is
 	// the shared cross-shell primitive there. sh/zsh get `sleep` directly.
