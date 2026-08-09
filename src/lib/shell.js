@@ -1,11 +1,123 @@
 /**
  * Cross-platform shell execution for the bash tool.
- * win32: cmd.exe /d /s /c  |  others: /bin/sh -c
+ * Detected via priority chain, with a platform-native fallback if nothing
+ * on the chain is available:
+ *   win32:  git bash (via `git --exec-path` / known install dirs,
+ *           deliberately skipping the WSL bash.exe shim) > pwsh >
+ *           powershell > cmd.exe /d /s /c
+ *   darwin: zsh > bash > sh > $SHELL
+ *   linux:  bash > sh > $SHELL
  */
 
-import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import path from "node:path";
 
 const MAX_TIMEOUT_MS = 2_147_483_647; // setTimeout upper bound (~24.8 days)
+
+/**
+ * Non-win32 shell priority chains, checked in order; first found on PATH wins.
+ * darwin: zsh > bash > sh
+ * linux:  bash > sh
+ */
+const POSIX_SHELL_CANDIDATES = {
+	darwin: [
+		{ command: "zsh", args: ["-c"] },
+		{ command: "bash", args: ["-c"] },
+		{ command: "sh", args: ["-c"] },
+	],
+	linux: [
+		{ command: "bash", args: ["-c"] },
+		{ command: "sh", args: ["-c"] },
+	],
+};
+
+const WIN32_FALLBACK = { shell: process.env.COMSPEC || "cmd.exe", args: ["/d", "/s", "/c"] };
+const POSIX_FALLBACK = { shell: process.env.SHELL || "/bin/sh", args: ["-c"] };
+const BASH_ARGS = ["-c"];
+
+let cachedShellConfig;
+
+/** Return true if `command` resolves to an executable on PATH. */
+function isOnPath(command) {
+	const finder = process.platform === "win32" ? "where" : "which";
+	try {
+		const result = spawnSync(finder, [command], { stdio: "ignore", windowsHide: true });
+		return result.status === 0;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Find the real MSYS/Git-for-Windows bash.exe, deliberately avoiding the
+ * `bash.exe` shim that Windows' "Optional Features" installs on PATH at
+ * %LOCALAPPDATA%\Microsoft\WindowsApps\bash.exe once WSL is enabled. That
+ * shim launches a full WSL distro (slow, different filesystem/path model,
+ * often not even installed) instead of a lightweight native Windows shell,
+ * so a plain `where bash` is unsafe on win32: WSL's shim frequently sits
+ * earlier on PATH than Git's own bin directory.
+ *
+ * Strategy, most to least reliable:
+ *   1. Ask git itself: `git --exec-path` resolves to something like
+ *      "C:\Program Files\Git\mingw64\libexec\git-core" -- walk up from
+ *      there to the Git install root and look for \bin\bash.exe /
+ *      \usr\bin\bash.exe. This only works if git.exe itself is on PATH,
+ *      but when it is, this is the most authoritative source: it's the
+ *      exact Git install bash.exe belongs to, not a guess.
+ *   2. Probe the well-known install directories Git for Windows uses
+ *      (64-bit, 32-bit-on-64-bit, per-user), independent of PATH.
+ *   3. Give up on bash entirely and fall through to pwsh/powershell/cmd --
+ *      deliberately does NOT fall back to a bare `where bash`, since on a
+ *      WSL-enabled machine that is exactly the shim this function exists
+ *      to avoid.
+ */
+function findGitBashWindows() {
+	const gitExecPath = spawnSync("git", ["--exec-path"], { encoding: "utf-8", windowsHide: true });
+	if (gitExecPath.status === 0 && gitExecPath.stdout) {
+		// e.g. C:\Program Files\Git\mingw64\libexec\git-core -> up 3 levels
+		// to the Git install root, e.g. C:\Program Files\Git
+		const installRoot = path.resolve(gitExecPath.stdout.trim(), "..", "..", "..");
+		for (const rel of [path.join("bin", "bash.exe"), path.join("usr", "bin", "bash.exe")]) {
+			const candidate = path.join(installRoot, rel);
+			if (existsSync(candidate)) return candidate;
+		}
+	}
+
+	const knownRoots = [
+		process.env["ProgramW6432"],
+		process.env["ProgramFiles"],
+		process.env["ProgramFiles(x86)"],
+		process.env["LocalAppData"],
+	].filter(Boolean);
+	for (const root of knownRoots) {
+		const candidate = path.join(root, "Git", "bin", "bash.exe");
+		if (existsSync(candidate)) return candidate;
+	}
+
+	return null;
+}
+
+/** Walk the platform's shell priority chain, returning the first shell found. */
+function detectShellConfig() {
+	if (process.platform === "win32") {
+		const gitBash = findGitBashWindows();
+		if (gitBash) return { shell: gitBash, args: BASH_ARGS };
+		if (isOnPath("pwsh")) return { shell: "pwsh", args: ["-NoLogo", "-NoProfile", "-Command"] };
+		if (isOnPath("powershell")) return { shell: "powershell", args: ["-NoLogo", "-NoProfile", "-Command"] };
+		return WIN32_FALLBACK;
+	}
+
+	const candidates = POSIX_SHELL_CANDIDATES[process.platform];
+	if (candidates) {
+		for (const candidate of candidates) {
+			if (isOnPath(candidate.command)) {
+				return { shell: candidate.command, args: candidate.args };
+			}
+		}
+	}
+	return POSIX_FALLBACK;
+}
 
 export function resolveTimeoutMs(timeoutSeconds) {
 	if (timeoutSeconds === undefined || timeoutSeconds === null) return undefined;
@@ -20,10 +132,10 @@ export function resolveTimeoutMs(timeoutSeconds) {
 }
 
 export function getShellConfig() {
-	if (process.platform === "win32") {
-		return { shell: process.env.COMSPEC || "cmd.exe", args: ["/d", "/s", "/c"] };
+	if (!cachedShellConfig) {
+		cachedShellConfig = detectShellConfig();
 	}
-	return { shell: process.env.SHELL || "/bin/sh", args: ["-c"] };
+	return cachedShellConfig;
 }
 
 /** Kill a process and its children. */

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { resolvePath } from "../src/lib/paths.js";
+import { getShellConfig } from "../src/lib/shell.js";
 import { DEFAULT_MAX_BYTES, truncateHead, truncateLine, truncateTail } from "../src/lib/truncate.js";
 import { globToRegExp, matchGlob } from "../src/lib/walk.js";
 import { bashTool } from "../src/tools/bash.js";
@@ -248,10 +249,24 @@ test("find: glob pattern with limit", async () => {
 // ---------- bash ----------
 
 test("bash: runs command in the given cwd", async () => {
-	const cmd = process.platform === "win32" ? "cd" : "pwd";
+	// Comparing bash's printed pwd against a Node.js-side path string is
+	// unreliable: MSYS Git Bash remaps certain Windows directories to fixed
+	// POSIX mountpoints (e.g. AppData\Local\Temp -> /tmp) rather than doing a
+	// purely mechanical drive-letter substitution, so a generic regex cannot
+	// invert its output back to a Windows path in the general case.
+	//
+	// Instead, prove the cwd took effect operationally: create a marker file
+	// via Node at a known absolute path, then ask the shell tool to find it
+	// using a relative reference from its own cwd. This only succeeds if the
+	// shell actually started in workDir, regardless of that shell's own path
+	// dialect (MSYS, WSL, native Windows, or POSIX).
+	const markerName = "cwd-marker.txt";
+	await writeFile(abs(markerName), "present");
+	const { shell } = getShellConfig();
+	const usesCdForCwd = process.platform === "win32" && !/bash/i.test(shell);
+	const cmd = usesCdForCwd ? `type ${markerName}` : `cat ${markerName}`;
 	const r = await bashTool.execute({ command: cmd, cwd: workDir, timeout: 30 });
-	const printed = r.text.trim().replace(/\\/g, "/").toLowerCase();
-	assert.ok(printed.includes(workDir.replace(/\\/g, "/").toLowerCase().replace(/^([a-z]):/, "$1:")));
+	assert.match(r.text, /present/);
 });
 
 test("bash: echo works", async () => {
@@ -260,10 +275,16 @@ test("bash: echo works", async () => {
 });
 
 test("bash: non-zero exit code reports error", async () => {
+	// `exit N` is a builtin in every shell on every priority chain (cmd,
+	// bash, zsh, sh, powershell/pwsh all support it with this exact syntax).
 	await assert.rejects(() => bashTool.execute({ command: "exit 3", cwd: workDir }), /exited with code 3/);
 });
 
 test("bash: timeout kills long-running command", async () => {
-	const cmd = process.platform === "win32" ? "ping -n 10 127.0.0.1" : "sleep 10";
+	// git bash ships a real `sleep`; cmd/powershell/pwsh don't, so `ping` is
+	// the shared cross-shell primitive there. sh/zsh get `sleep` directly.
+	const { shell } = getShellConfig();
+	const hasSleep = process.platform !== "win32" || /bash/i.test(shell);
+	const cmd = hasSleep ? "sleep 10" : "ping -n 10 127.0.0.1";
 	await assert.rejects(() => bashTool.execute({ command: cmd, cwd: workDir, timeout: 1 }), /timed out after 1 seconds/);
 });
