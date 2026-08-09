@@ -31,29 +31,27 @@ node index.js        # or npm start
 }
 ```
 
-## Workflow: Set the Working Directory First
+## Paths: Absolute Only
 
-**You must call the `cwd` tool to set the working directory before using any other tool.** Otherwise every other tool call fails with an error that guides the AI to set it.
+**All path arguments must be absolute.** Relative paths are rejected with a guiding error. There is no session state — every call is self-contained:
 
 ```
-AI:  cwd(path="D:\\projects\\my-app")     → Working directory set to: D:\projects\my-app
-AI:  cwd()                                → Current working directory: D:\projects\my-app
-AI:  read(path="src/index.ts")            → relative paths resolve against the cwd
-AI:  bash(command="npm test")             → executed in that directory
+AI:  read(path="D:\\projects\\my-app\\src\\index.ts")     → absolute path required
+AI:  bash(command="npm test", cwd="D:\\projects\\my-app") → cwd selects the run directory
+AI:  grep(pattern="TODO", path="D:\\projects\\my-app")    → directory to search
 ```
 
 ## Tools
 
 | Tool | Description |
 |------|-------------|
-| `cwd` | Set/query the session working directory (prerequisite for all other tools) |
-| `read` | Read a file with `offset`/`limit` pagination (1-indexed); images (jpg/png/gif/webp/bmp) returned as attachments; truncated at 2000 lines / 50KB |
-| `write` | Write a file, auto-creating parent directories, overwriting existing files |
-| `edit` | Exact string replacement: `edits: [{oldText, newText}]`; oldText must be unique in the file, edits must not overlap, applied atomically; preserves CRLF/LF line endings and BOM; returns a unified diff |
-| `bash` | Run a shell command in the working directory (Windows: cmd, Unix: sh); optional `timeout` (seconds, no default); output keeps the **tail** 2000 lines / 50KB; non-zero exit code reported as error |
-| `grep` | Regex/literal search with `glob` filter, `ignoreCase`, `context` lines, `limit` (default 100); single lines truncated at 500 chars; skips binary files and node_modules/.git etc. |
-| `find` | Find files by glob pattern (`*`/`?`/`**` supported), `limit` default 1000 |
-| `ls` | List directory contents, alphabetical, directories suffixed with `/`, `limit` default 500 |
+| `read` | Read a file (`path`, absolute) with `offset`/`limit` pagination (1-indexed); images (jpg/png/gif/webp/bmp) returned as attachments; truncated at 2000 lines / 50KB |
+| `write` | Write a file (`path`, absolute), auto-creating parent directories, overwriting existing files |
+| `edit` | Exact string replacement in a file (`path`, absolute): `edits: [{oldText, newText}]`; oldText must be unique in the file, edits must not overlap, applied atomically; preserves CRLF/LF line endings and BOM; returns a unified diff |
+| `bash` | Run a shell command in `cwd` (absolute, required) — Windows: cmd, Unix: sh; optional `timeout` (seconds, no default); output keeps the **tail** 2000 lines / 50KB; non-zero exit code reported as error |
+| `grep` | Regex/literal search in `path` (absolute file or directory) with `glob` filter, `ignoreCase`, `context` lines, `limit` (default 100); single lines truncated at 500 chars; skips binary files and node_modules/.git etc. |
+| `find` | Find files by glob pattern (`*`/`?`/`**` supported) under `path` (absolute directory), `limit` default 1000 |
+| `ls` | List directory `path` (absolute), alphabetical, directories suffixed with `/`, `limit` default 500 |
 
 ### Output Truncation Conventions
 

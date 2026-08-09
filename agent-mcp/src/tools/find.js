@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { relativeDisplay, resolvePath } from "../lib/paths.js";
+import { resolvePath } from "../lib/paths.js";
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead } from "../lib/truncate.js";
 import { matchGlob, walk } from "../lib/walk.js";
 
@@ -14,21 +14,21 @@ export const findTool = {
 		pattern: z
 			.string()
 			.describe("Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"),
-		path: z.string().optional().describe("Directory to search in (default: working directory)"),
+		path: z.string().describe("Absolute path of the directory to search in"),
 		limit: z.number().optional().describe(`Maximum number of results (default: ${DEFAULT_LIMIT})`),
 	},
 	async execute({ pattern, path: searchDir, limit }) {
-		const searchPath = resolvePath(searchDir || ".");
+		const searchPath = resolvePath(searchDir);
 		const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 
 		try {
 			const searchStat = await stat(searchPath);
 			if (!searchStat.isDirectory()) {
-				throw new Error(`Not a directory: ${relativeDisplay(searchPath)}`);
+				throw new Error(`Not a directory: ${searchPath}`);
 			}
 		} catch (err) {
 			if (err.message.startsWith("Not a directory")) throw err;
-			throw new Error(`Path not found: ${relativeDisplay(searchPath)}`);
+			throw new Error(`Path not found: ${searchPath}`);
 		}
 
 		const results = [];

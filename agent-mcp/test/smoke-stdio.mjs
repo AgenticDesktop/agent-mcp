@@ -33,38 +33,34 @@ try {
 	// tools/list
 	const { tools } = await client.listTools();
 	const names = tools.map((t) => t.name).sort();
-	assert.deepEqual(names, ["bash", "cwd", "edit", "find", "grep", "ls", "read", "write"]);
+	assert.deepEqual(names, ["bash", "edit", "find", "grep", "ls", "read", "write"]);
 	console.log(`[smoke] tools/list OK: ${names.join(", ")}`);
 
-	// Calling a tool before cwd is set must produce an isError result.
-	const earlyRead = await client.callTool({ name: "read", arguments: { path: "smoke.txt" } });
-	assert.equal(earlyRead.isError, true);
-	assert.match(earlyRead.content[0].text, /Working directory not set/);
-	console.log("[smoke] cwd-not-set guard OK");
+	// Relative paths must be rejected with a guiding error.
+	const relativeRead = await client.callTool({ name: "read", arguments: { path: "smoke.txt" } });
+	assert.equal(relativeRead.isError, true);
+	assert.match(relativeRead.content[0].text, /Path must be absolute/);
+	console.log("[smoke] relative-path guard OK");
 
-	// Set cwd.
-	const setResult = await client.callTool({ name: "cwd", arguments: { path: workDir } });
-	assert.match(setResult.content[0].text, /Working directory set to:/);
-	console.log("[smoke] cwd set OK");
-
-	// read via relative path.
-	const readResult = await client.callTool({ name: "read", arguments: { path: "smoke.txt" } });
+	// read via absolute path.
+	const readResult = await client.callTool({ name: "read", arguments: { path: path.join(workDir, "smoke.txt") } });
 	assert.match(readResult.content[0].text, /smoke-line-1/);
 	console.log("[smoke] read OK");
 
 	// write + grep roundtrip.
-	await client.callTool({ name: "write", arguments: { path: "roundtrip.txt", content: "roundtrip-token\n" } });
+	const roundtrip = path.join(workDir, "roundtrip.txt");
+	await client.callTool({ name: "write", arguments: { path: roundtrip, content: "roundtrip-token\n" } });
 	const grepResult = await client.callTool({
 		name: "grep",
-		arguments: { pattern: "roundtrip-token" },
+		arguments: { pattern: "roundtrip-token", path: workDir },
 	});
 	assert.match(grepResult.content[0].text, /roundtrip\.txt:1: roundtrip-token/);
 	console.log("[smoke] write+grep OK");
 
-	// bash echo.
+	// bash echo in the given cwd.
 	const bashResult = await client.callTool({
 		name: "bash",
-		arguments: { command: process.platform === "win32" ? "echo smoke-bash" : "echo smoke-bash", timeout: 30 },
+		arguments: { command: "echo smoke-bash", cwd: workDir, timeout: 30 },
 	});
 	assert.match(bashResult.content[0].text, /smoke-bash/);
 	console.log("[smoke] bash OK");

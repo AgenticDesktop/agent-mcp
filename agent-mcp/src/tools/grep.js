@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { z } from "zod";
-import { relativeDisplay, resolvePath } from "../lib/paths.js";
+import { resolvePath } from "../lib/paths.js";
 import {
 	DEFAULT_MAX_BYTES,
 	formatSize,
@@ -36,7 +36,7 @@ export const grepTool = {
 	description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Skips binary files and common directories (node_modules, .git, dist, etc). Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars.`,
 	schema: {
 		pattern: z.string().describe("Search pattern (regex or literal string)"),
-		path: z.string().optional().describe("Directory or file to search (default: working directory)"),
+		path: z.string().describe("Absolute path of the directory or file to search"),
 		glob: z.string().optional().describe("Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"),
 		ignoreCase: z.boolean().optional().describe("Case-insensitive search (default: false)"),
 		literal: z.boolean().optional().describe("Treat pattern as literal string instead of regex (default: false)"),
@@ -47,7 +47,7 @@ export const grepTool = {
 		limit: z.number().optional().describe(`Maximum number of matches to return (default: ${DEFAULT_LIMIT})`),
 	},
 	async execute({ pattern, path: searchDir, glob, ignoreCase, literal, context, limit }) {
-		const searchPath = resolvePath(searchDir || ".");
+		const searchPath = resolvePath(searchDir);
 		const contextValue = context && context > 0 ? Math.floor(context) : 0;
 		const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 
@@ -62,7 +62,7 @@ export const grepTool = {
 		try {
 			searchStat = await stat(searchPath);
 		} catch {
-			throw new Error(`Path not found: ${relativeDisplay(searchPath)}`);
+			throw new Error(`Path not found: ${searchPath}`);
 		}
 
 		// Collect candidate files.

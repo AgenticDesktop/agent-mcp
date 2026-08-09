@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { relativeDisplay, resolvePath } from "../lib/paths.js";
+import { resolvePath } from "../lib/paths.js";
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead } from "../lib/truncate.js";
 
 const DEFAULT_LIMIT = 500;
@@ -10,12 +10,12 @@ export const lsTool = {
 	name: "ls",
 	description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 	schema: {
-		path: z.string().optional().describe("Directory to list (default: working directory)"),
+		path: z.string().describe("Absolute path of the directory to list"),
 		limit: z.number().optional().describe(`Maximum number of entries to return (default: ${DEFAULT_LIMIT})`),
 	},
 	async execute({ path: dirPath, limit }) {
-		const absolute = resolvePath(dirPath || ".");
-		const display = relativeDisplay(absolute);
+		const absolute = resolvePath(dirPath);
+		const display = absolute;
 		const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 
 		let dirStat;

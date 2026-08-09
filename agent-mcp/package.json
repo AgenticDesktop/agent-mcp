@@ -1,6 +1,6 @@
 {
 	"name": "@shihaoshen/agent-mcp-for-chat",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "MCP server that gives any chat AI agent capabilities: read/write/edit files, run shell commands, grep/find/ls. Tool design inspired by pi (pi.dev).",
 	"license": "MIT",
 	"type": "module",

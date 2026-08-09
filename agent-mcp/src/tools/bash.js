@@ -1,17 +1,22 @@
 import { z } from "zod";
-import { requireCwd } from "../lib/paths.js";
+import { resolveDir } from "../lib/paths.js";
 import { execShell } from "../lib/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateTail } from "../lib/truncate.js";
 
 export const bashTool = {
 	name: "bash",
-	description: `Execute a shell command in the working directory set via the cwd tool. Returns stdout and stderr combined. Output is truncated to the last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Optionally provide a timeout in seconds (no default timeout).`,
+	description: `Execute a shell command in the directory given by the cwd parameter. Returns stdout and stderr combined. Output is truncated to the last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Optionally provide a timeout in seconds (no default timeout).`,
 	schema: {
 		command: z.string().describe("Shell command to execute"),
+		cwd: z
+			.string()
+			.describe(
+				"Absolute path of the directory to run the command in (e.g. 'D:\\projects\\my-app' or '/home/user/my-app')",
+			),
 		timeout: z.number().optional().describe("Timeout in seconds (optional, no default timeout)"),
 	},
-	async execute({ command, timeout }) {
-		const cwd = requireCwd();
+	async execute({ command, cwd: cwdArg, timeout }) {
+		const cwd = resolveDir(cwdArg);
 
 		// Accumulate output, keeping memory bounded: once we exceed the cap we
 		// keep only the tail (final truncation happens at the end anyway).

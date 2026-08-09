@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { relativeDisplay, resolvePath } from "../lib/paths.js";
+import { resolvePath } from "../lib/paths.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "../lib/truncate.js";
 
 const IMAGE_MIME = {
@@ -17,14 +17,14 @@ export const readTool = {
 	name: "read",
 	description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are returned as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 	schema: {
-		path: z.string().describe("Path to the file to read (relative to the working directory or absolute)"),
+		path: z.string().describe("Absolute path to the file to read"),
 		offset: z.number().optional().describe("Line number to start reading from (1-indexed)"),
 		limit: z.number().optional().describe("Maximum number of lines to read"),
 	},
 	/** Returns { text } or { image: {data, mimeType}, text } */
 	async execute({ path: filePath, offset, limit }) {
 		const absolute = resolvePath(filePath);
-		const display = relativeDisplay(absolute);
+		const display = absolute;
 
 		const ext = path.extname(absolute).toLowerCase();
 		if (IMAGE_MIME[ext]) {

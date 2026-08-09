@@ -3,11 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { getCwd, setCwd } from "../src/lib/paths.js";
+import { resolvePath } from "../src/lib/paths.js";
 import { DEFAULT_MAX_BYTES, truncateHead, truncateLine, truncateTail } from "../src/lib/truncate.js";
 import { globToRegExp, matchGlob } from "../src/lib/walk.js";
 import { bashTool } from "../src/tools/bash.js";
-import { cwdTool } from "../src/tools/cwd.js";
 import { editTool } from "../src/tools/edit.js";
 import { findTool } from "../src/tools/find.js";
 import { grepTool } from "../src/tools/grep.js";
@@ -24,6 +23,8 @@ before(async () => {
 after(async () => {
 	await rm(workDir, { recursive: true, force: true });
 });
+
+const abs = (...segments) => path.join(workDir, ...segments);
 
 // ---------- truncate ----------
 
@@ -102,126 +103,119 @@ test("matchGlob: slash patterns match anywhere in tree", () => {
 	assert.ok(matchGlob("pkg/src/app/main.ts", "src/**/*.ts"));
 });
 
-// ---------- cwd tool ----------
+// ---------- absolute path enforcement ----------
 
-test("cwd: query before set reports not-set", async () => {
-	// Fresh state only if no other test ran first; use a distinctive path then reset.
-	const result = await cwdTool.execute({});
-	// Either not set (first run) or already set by an earlier test.
-	assert.match(result.text, /not set|Current working directory/);
+test("resolvePath: accepts absolute paths", () => {
+	assert.equal(resolvePath(workDir), path.normalize(workDir));
 });
 
-test("cwd: set and query", async () => {
-	const set = await cwdTool.execute({ path: workDir });
-	assert.ok(set.text.includes(workDir));
-	assert.equal(getCwd(), path.resolve(workDir));
-	const query = await cwdTool.execute({});
-	assert.ok(query.text.includes(workDir));
+test("resolvePath: rejects relative paths with a guiding error", () => {
+	assert.throws(() => resolvePath("src/index.ts"), /Path must be absolute/);
+	assert.throws(() => resolvePath("./file.txt"), /Path must be absolute/);
+	assert.throws(() => resolvePath("../up.txt"), /Path must be absolute/);
 });
 
-test("cwd: rejects nonexistent directory", async () => {
-	await assert.rejects(() => cwdTool.execute({ path: path.join(workDir, "nope-does-not-exist") }));
+test("tools reject relative paths", async () => {
+	await assert.rejects(() => readTool.execute({ path: "relative.txt" }), /Path must be absolute/);
+	await assert.rejects(() => writeTool.execute({ path: "relative.txt", content: "x" }), /Path must be absolute/);
+	await assert.rejects(
+		() => editTool.execute({ path: "relative.txt", edits: [{ oldText: "a", newText: "b" }] }),
+		/Path must be absolute/,
+	);
+	await assert.rejects(() => grepTool.execute({ pattern: "x", path: "relative-dir" }), /Path must be absolute/);
+	await assert.rejects(() => findTool.execute({ pattern: "*.ts", path: "relative-dir" }), /Path must be absolute/);
+	await assert.rejects(() => lsTool.execute({ path: "relative-dir" }), /Path must be absolute/);
+	await assert.rejects(() => bashTool.execute({ command: "echo hi", cwd: "relative-dir" }), /Path must be absolute/);
 });
 
-test("tools require cwd to be set", async () => {
-	// Reset module state by importing a fresh copy is complex; instead verify
-	// requireCwd semantics through a tool call with cwd set to workDir.
-	setCwd(workDir);
-	const result = await lsTool.execute({});
-	assert.ok(result.text.length > 0 || result.text === "(empty directory)");
+test("bash: rejects nonexistent cwd", async () => {
+	await assert.rejects(
+		() => bashTool.execute({ command: "echo hi", cwd: abs("nope-does-not-exist") }),
+		/Directory not found/,
+	);
 });
 
 // ---------- write / read / edit / ls ----------
 
 test("write creates parent dirs and read returns content", async () => {
-	setCwd(workDir);
-	const w = await writeTool.execute({ path: "sub/dir/hello.txt", content: "hello\nworld\n" });
+	const w = await writeTool.execute({ path: abs("sub", "dir", "hello.txt"), content: "hello\nworld\n" });
 	assert.match(w.text, /Successfully wrote 12 bytes/);
-	const r = await readTool.execute({ path: "sub/dir/hello.txt" });
+	const r = await readTool.execute({ path: abs("sub", "dir", "hello.txt") });
 	assert.equal(r.text, "hello\nworld\n");
 });
 
 test("read: offset/limit pagination", async () => {
-	setCwd(workDir);
-	await writeTool.execute({ path: "paged.txt", content: "1\n2\n3\n4\n5" });
-	const r = await readTool.execute({ path: "paged.txt", offset: 2, limit: 2 });
+	await writeTool.execute({ path: abs("paged.txt"), content: "1\n2\n3\n4\n5" });
+	const r = await readTool.execute({ path: abs("paged.txt"), offset: 2, limit: 2 });
 	assert.ok(r.text.startsWith("2\n3"));
 	assert.match(r.text, /more lines in file\. Use offset=4 to continue/);
 });
 
 test("read: offset beyond end of file errors", async () => {
-	setCwd(workDir);
-	await assert.rejects(() => readTool.execute({ path: "paged.txt", offset: 99 }), /beyond end of file/);
+	await assert.rejects(() => readTool.execute({ path: abs("paged.txt"), offset: 99 }), /beyond end of file/);
 });
 
 test("edit: exact replacement with CRLF preserved", async () => {
-	setCwd(workDir);
-	await writeFile(path.join(workDir, "crlf.txt"), "line1\r\nline2\r\nline3\r\n");
+	await writeFile(abs("crlf.txt"), "line1\r\nline2\r\nline3\r\n");
 	const r = await editTool.execute({
-		path: "crlf.txt",
+		path: abs("crlf.txt"),
 		edits: [{ oldText: "line2", newText: "LINE2" }],
 	});
 	assert.match(r.text, /Applied 1 edit/);
 	assert.match(r.text, /-line2/);
 	assert.match(r.text, /\+LINE2/);
-	const after = await readFile(path.join(workDir, "crlf.txt"), "utf-8");
+	const after = await readFile(abs("crlf.txt"), "utf-8");
 	assert.equal(after, "line1\r\nLINE2\r\nline3\r\n");
 });
 
 test("edit: non-unique oldText fails", async () => {
-	setCwd(workDir);
-	await writeTool.execute({ path: "dup.txt", content: "foo\nbar\nfoo\n" });
+	await writeTool.execute({ path: abs("dup.txt"), content: "foo\nbar\nfoo\n" });
 	await assert.rejects(
-		() => editTool.execute({ path: "dup.txt", edits: [{ oldText: "foo", newText: "baz" }] }),
+		() => editTool.execute({ path: abs("dup.txt"), edits: [{ oldText: "foo", newText: "baz" }] }),
 		/found 2 times/,
 	);
 	// File unchanged after failed edit.
-	const content = await readFile(path.join(workDir, "dup.txt"), "utf-8");
+	const content = await readFile(abs("dup.txt"), "utf-8");
 	assert.equal(content, "foo\nbar\nfoo\n");
 });
 
 test("edit: oldText not found fails", async () => {
-	setCwd(workDir);
 	await assert.rejects(
-		() => editTool.execute({ path: "dup.txt", edits: [{ oldText: "missing", newText: "x" }] }),
+		() => editTool.execute({ path: abs("dup.txt"), edits: [{ oldText: "missing", newText: "x" }] }),
 		/oldText not found/,
 	);
 });
 
 test("edit: multiple edits applied atomically", async () => {
-	setCwd(workDir);
-	await writeTool.execute({ path: "multi.txt", content: "a\nb\nc\n" });
+	await writeTool.execute({ path: abs("multi.txt"), content: "a\nb\nc\n" });
 	await editTool.execute({
-		path: "multi.txt",
+		path: abs("multi.txt"),
 		edits: [
 			{ oldText: "a", newText: "A" },
 			{ oldText: "c", newText: "C" },
 		],
 	});
-	const content = await readFile(path.join(workDir, "multi.txt"), "utf-8");
+	const content = await readFile(abs("multi.txt"), "utf-8");
 	assert.equal(content, "A\nb\nC\n");
 });
 
 test("ls: lists entries with directory suffix, sorted", async () => {
-	setCwd(workDir);
-	const r = await lsTool.execute({ path: "sub" });
+	const r = await lsTool.execute({ path: abs("sub") });
 	assert.match(r.text, /dir\//);
 });
 
 // ---------- grep / find ----------
 
 test("grep: finds matches with line numbers", async () => {
-	setCwd(workDir);
-	await writeTool.execute({ path: "grepme/a.ts", content: "const alpha = 1;\nconst beta = 2;\n" });
-	const r = await grepTool.execute({ pattern: "alpha", path: "grepme" });
+	await writeTool.execute({ path: abs("grepme", "a.ts"), content: "const alpha = 1;\nconst beta = 2;\n" });
+	const r = await grepTool.execute({ pattern: "alpha", path: abs("grepme") });
 	assert.match(r.text, /a\.ts:1: const alpha = 1;/);
 });
 
 test("grep: literal + ignoreCase + glob", async () => {
-	setCwd(workDir);
 	const r = await grepTool.execute({
 		pattern: "BETA",
-		path: "grepme",
+		path: abs("grepme"),
 		glob: "*.ts",
 		literal: true,
 		ignoreCase: true,
@@ -230,48 +224,46 @@ test("grep: literal + ignoreCase + glob", async () => {
 });
 
 test("grep: context lines use dash format", async () => {
-	setCwd(workDir);
-	const r = await grepTool.execute({ pattern: "beta", path: "grepme", context: 1 });
+	const r = await grepTool.execute({ pattern: "beta", path: abs("grepme"), context: 1 });
 	assert.match(r.text, /a\.ts-1- const alpha = 1;/);
 	assert.match(r.text, /a\.ts:2: const beta = 2;/);
 });
 
 test("grep: no matches", async () => {
-	setCwd(workDir);
-	const r = await grepTool.execute({ pattern: "zzz-no-such-token", path: "grepme" });
+	const r = await grepTool.execute({ pattern: "zzz-no-such-token", path: abs("grepme") });
 	assert.equal(r.text, "No matches found");
 });
 
 test("grep: invalid regex errors", async () => {
-	setCwd(workDir);
-	await assert.rejects(() => grepTool.execute({ pattern: "(unclosed", path: "grepme" }), /Invalid regex/);
+	await assert.rejects(() => grepTool.execute({ pattern: "(unclosed", path: abs("grepme") }), /Invalid regex/);
 });
 
 test("find: glob pattern with limit", async () => {
-	setCwd(workDir);
-	const r = await findTool.execute({ pattern: "*.ts", path: "grepme" });
+	const r = await findTool.execute({ pattern: "*.ts", path: abs("grepme") });
 	assert.match(r.text, /a\.ts/);
-	const none = await findTool.execute({ pattern: "*.rs", path: "grepme" });
+	const none = await findTool.execute({ pattern: "*.rs", path: abs("grepme") });
 	assert.equal(none.text, "No files found matching pattern");
 });
 
 // ---------- bash ----------
 
-test("bash: runs command in session cwd", async () => {
-	setCwd(workDir);
-	const cmd = process.platform === "win32" ? "echo hello-bash" : "echo hello-bash";
-	const r = await bashTool.execute({ command: cmd, timeout: 30 });
+test("bash: runs command in the given cwd", async () => {
+	const cmd = process.platform === "win32" ? "cd" : "pwd";
+	const r = await bashTool.execute({ command: cmd, cwd: workDir, timeout: 30 });
+	const printed = r.text.trim().replace(/\\/g, "/").toLowerCase();
+	assert.ok(printed.includes(workDir.replace(/\\/g, "/").toLowerCase().replace(/^([a-z]):/, "$1:")));
+});
+
+test("bash: echo works", async () => {
+	const r = await bashTool.execute({ command: "echo hello-bash", cwd: workDir, timeout: 30 });
 	assert.match(r.text, /hello-bash/);
 });
 
 test("bash: non-zero exit code reports error", async () => {
-	setCwd(workDir);
-	const cmd = process.platform === "win32" ? "exit 3" : "exit 3";
-	await assert.rejects(() => bashTool.execute({ command: cmd }), /exited with code 3/);
+	await assert.rejects(() => bashTool.execute({ command: "exit 3", cwd: workDir }), /exited with code 3/);
 });
 
 test("bash: timeout kills long-running command", async () => {
-	setCwd(workDir);
 	const cmd = process.platform === "win32" ? "ping -n 10 127.0.0.1" : "sleep 10";
-	await assert.rejects(() => bashTool.execute({ command: cmd, timeout: 1 }), /timed out after 1 seconds/);
+	await assert.rejects(() => bashTool.execute({ command: cmd, cwd: workDir, timeout: 1 }), /timed out after 1 seconds/);
 });

@@ -1,6 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { bashTool } from "./tools/bash.js";
-import { cwdTool } from "./tools/cwd.js";
 import { editTool } from "./tools/edit.js";
 import { findTool } from "./tools/find.js";
 import { grepTool } from "./tools/grep.js";
@@ -8,7 +7,7 @@ import { lsTool } from "./tools/ls.js";
 import { readTool } from "./tools/read.js";
 import { writeTool } from "./tools/write.js";
 
-const TOOLS = [cwdTool, readTool, writeTool, editTool, bashTool, grepTool, findTool, lsTool];
+const TOOLS = [readTool, writeTool, editTool, bashTool, grepTool, findTool, lsTool];
 
 /**
  * Create the MCP server with all agent tools registered.

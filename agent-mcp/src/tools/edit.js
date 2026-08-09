@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { withFileMutationQueue } from "../lib/mutation-queue.js";
-import { relativeDisplay, resolvePath } from "../lib/paths.js";
+import { resolvePath } from "../lib/paths.js";
 
 const BOM = "﻿";
 const DIFF_CONTEXT_LINES = 2;
@@ -180,7 +180,7 @@ export const editTool = {
 	description:
 		"Make exact string replacements in a file. Each edit's oldText must match the file contents EXACTLY (including whitespace and indentation) and must occur exactly once in the file; include enough surrounding context to make it unique. Multiple edits are applied atomically: if any edit fails, the file is left unchanged. Preserves the file's line endings (CRLF/LF) and BOM. Returns a unified diff of the changes. Do NOT use this tool to create new files; use write instead.",
 	schema: {
-		path: z.string().describe("Path to the file to edit (relative to the working directory or absolute)"),
+		path: z.string().describe("Absolute path to the file to edit"),
 		edits: z
 			.array(
 				z.object({
@@ -193,7 +193,7 @@ export const editTool = {
 	},
 	async execute({ path: filePath, edits }) {
 		const absolute = resolvePath(filePath);
-		const display = relativeDisplay(absolute);
+		const display = absolute;
 		return withFileMutationQueue(absolute, async () => {
 			let raw;
 			try {

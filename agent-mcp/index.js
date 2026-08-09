@@ -9,4 +9,4 @@ await server.connect(transport);
 
 // MCP servers log to stderr; stdout is reserved for the protocol.
 console.error("agent-mcp-for-chat: MCP server running on stdio");
-console.error('agent-mcp-for-chat: call the "cwd" tool first to set the working directory');
+console.error("agent-mcp-for-chat: all path arguments must be absolute");
