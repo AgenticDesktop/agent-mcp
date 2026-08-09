@@ -1,0 +1,38 @@
+{
+	"name": "@shihaoshen/agent-mcp-for-chat",
+	"version": "0.1.0",
+	"description": "MCP server that gives any chat AI agent capabilities: read/write/edit files, run shell commands, grep/find/ls. Tool design inspired by pi (pi.dev).",
+	"license": "MIT",
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"bin": {
+		"agent-mcp": "./index.js"
+	},
+	"files": [
+		"index.js",
+		"src/",
+		"README.md"
+	],
+	"engines": {
+		"node": ">=18"
+	},
+	"scripts": {
+		"start": "node index.js",
+		"test": "node --test test/tools.test.js",
+		"test:smoke": "node test/smoke-stdio.mjs"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.18.0",
+		"zod": "^3.25.0"
+	},
+	"keywords": [
+		"mcp",
+		"mcp-server",
+		"agent",
+		"tools",
+		"ai",
+		"llm"
+	]
+}
