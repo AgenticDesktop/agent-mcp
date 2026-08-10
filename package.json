@@ -1,6 +1,6 @@
 {
 	"name": "@shihaoshen/agent-mcp-for-chat",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "MCP server that gives any chat AI agent capabilities: read/write/edit files, run shell commands, grep/find/ls.",
 	"license": "MIT",
 	"type": "module",
