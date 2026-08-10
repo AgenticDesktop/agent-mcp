@@ -1,6 +1,6 @@
 {
 	"name": "@shihaoshen/agent-mcp-for-chat",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"description": "MCP server that gives any chat AI agent capabilities: read/write/edit files, run shell commands, grep/find/ls.",
 	"license": "MIT",
 	"type": "module",
@@ -21,7 +21,8 @@
 	"scripts": {
 		"start": "node index.js",
 		"test": "node --test test/tools.test.js",
-		"test:smoke": "node test/smoke-stdio.mjs"
+		"test:smoke": "node test/smoke-stdio.mjs",
+		"test:smoke-http": "node test/smoke-http.mjs"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.18.0",

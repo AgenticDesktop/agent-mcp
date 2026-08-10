@@ -4,8 +4,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createAgentMcpServer } from "./src/server.js";
+import { startHttpServer } from "./src/http-server.js";
 
 const args = process.argv.slice(2);
+
+/** Read the value following a flag, e.g. `--port 8080`. Returns undefined if absent. */
+function flagValue(flag) {
+	const i = args.indexOf(flag);
+	return i !== -1 ? args[i + 1] : undefined;
+}
 
 if (args.includes("--help") || args.includes("-h")) {
 	const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,14 +27,26 @@ Usage:
   agent-mcp [options]
 
 Options:
-  -h, --help     Show this help message and exit
-  -v, --version  Show version number and exit
+  -h, --help              Show this help message and exit
+  -v, --version           Show version number and exit
+  --remote                Run an HTTP MCP server instead of stdio
+  --transport http|sse    Remote transport: streamable-http (default) or
+                          legacy SSE. Only valid together with --remote
+  --port <n>              Port to listen on (default: 0, a random free port
+                          assigned by the OS; printed to stderr on startup)
+  --host <addr>           Address to bind (default: 127.0.0.1)
 
 Transport:
-  Runs an MCP server over stdio. Not meant to be invoked directly by a
-  human in a terminal -- point an MCP-compatible client at this command.
+  Without options, runs an MCP server over stdio. Not meant to be invoked
+  directly by a human in a terminal -- point an MCP-compatible client at
+  this command.
 
-Client configuration:
+  With --remote, listens over HTTP instead:
+    streamable-http (default):  POST http://<host>:<port>/mcp
+    sse (--transport sse):      GET  http://<host>:<port>/sse
+                                POST http://<host>:<port>/messages
+
+Client configuration (stdio):
   {
     "mcpServers": {
       "agent": {
@@ -62,11 +81,51 @@ if (args.includes("--version") || args.includes("-v")) {
 	process.exit(0);
 }
 
-const server = createAgentMcpServer();
-const transport = new StdioServerTransport();
+const remote = args.includes("--remote");
+const transportArg = flagValue("--transport");
 
-await server.connect(transport);
+if (transportArg !== undefined && !remote) {
+	console.error("agent-mcp-for-chat: --transport is only valid together with --remote");
+	process.exit(1);
+}
 
-// MCP servers log to stderr; stdout is reserved for the protocol.
-console.error("agent-mcp-for-chat: MCP server running on stdio");
-console.error("agent-mcp-for-chat: all path arguments must be absolute");
+if (remote) {
+	const mode = transportArg ?? "http";
+	if (mode !== "http" && mode !== "sse") {
+		console.error(`agent-mcp-for-chat: invalid --transport "${mode}" (expected "http" or "sse")`);
+		process.exit(1);
+	}
+	const portArg = flagValue("--port");
+	const port = portArg === undefined ? 0 : Number(portArg);
+	if (!Number.isInteger(port) || port < 0 || port > 65535) {
+		console.error(`agent-mcp-for-chat: invalid --port "${portArg}"`);
+		process.exit(1);
+	}
+	const host = flagValue("--host") ?? "127.0.0.1";
+
+	const { port: actualPort } = await startHttpServer({ mode, host, port });
+
+	const base = `http://${host}:${actualPort}`;
+	console.error(`agent-mcp-for-chat: MCP server listening on ${base}`);
+	if (mode === "http") {
+		console.error(`agent-mcp-for-chat: streamable-http endpoint: POST ${base}/mcp`);
+	} else {
+		console.error(`agent-mcp-for-chat: sse endpoints: GET ${base}/sse, POST ${base}/messages`);
+	}
+	console.error("agent-mcp-for-chat: all path arguments must be absolute");
+	if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost") {
+		console.error(
+			"agent-mcp-for-chat: WARNING: server is reachable from other machines; " +
+				"tools can run arbitrary commands and read/write files. Use only on trusted networks.",
+		);
+	}
+} else {
+	const server = createAgentMcpServer();
+	const transport = new StdioServerTransport();
+
+	await server.connect(transport);
+
+	// MCP servers log to stderr; stdout is reserved for the protocol.
+	console.error("agent-mcp-for-chat: MCP server running on stdio");
+	console.error("agent-mcp-for-chat: all path arguments must be absolute");
+}

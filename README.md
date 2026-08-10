@@ -2,7 +2,7 @@
 
 An MCP server that gives any chat AI agent capabilities: reading and writing files, precise editing, running commands, and searching code.
 
-Zero build, pure Node.js (ESM), stdio transport, runs directly via `npx`.
+Zero build, pure Node.js (ESM), runs over stdio or HTTP (streamable-http / SSE), directly via `npx`.
 
 ## Quick Start
 
@@ -18,7 +18,34 @@ npm install
 node index.js        # or npm start
 ```
 
+## Transports
+
+No arguments: stdio (default) — point an MCP-compatible client at the command.
+
+`--remote`: listen over HTTP instead. Endpoints:
+
+| Mode | Endpoints |
+|------|-----------|
+| streamable-http (default) | `POST /mcp` |
+| legacy SSE (`--transport sse`) | `GET /sse` + `POST /messages` |
+
+```bash
+# streamable-http, random free port (printed to stderr on startup)
+npx @shihaoshen/agent-mcp-for-chat --remote
+
+# legacy SSE transport
+npx @shihaoshen/agent-mcp-for-chat --remote --transport sse
+
+# fixed port / custom bind address
+npx @shihaoshen/agent-mcp-for-chat --remote --port 8080
+npx @shihaoshen/agent-mcp-for-chat --remote --host 0.0.0.0   # see Security
+```
+
+Options: `--remote`, `--transport http|sse` (only with `--remote`), `--port <n>` (default `0` = OS-assigned free port), `--host <addr>` (default `127.0.0.1`).
+
 ## Client Configuration
+
+stdio:
 
 ```json
 {
@@ -26,6 +53,30 @@ node index.js        # or npm start
 		"agent": {
 			"command": "npx",
 			"args": ["-y", "@shihaoshen/agent-mcp-for-chat"]
+		}
+	}
+}
+```
+
+streamable-http (start the server with `--remote` first):
+
+```json
+{
+	"mcpServers": {
+		"agent": {
+			"url": "http://127.0.0.1:8080/mcp"
+		}
+	}
+}
+```
+
+legacy SSE (start the server with `--remote --transport sse` first):
+
+```json
+{
+	"mcpServers": {
+		"agent": {
+			"url": "http://127.0.0.1:8080/sse"
 		}
 	}
 }
@@ -63,11 +114,14 @@ AI:  grep(pattern="TODO", path="D:\\projects\\my-app")    → directory to searc
 
 This server has **no permission system**. It runs with the privileges of the user who started the process; `bash` can execute arbitrary commands and the file tools can read/write any path. Only use it with trusted clients/prompts; containerize it yourself if you need isolation.
 
+With `--remote`, anyone who can reach the HTTP port gets the same capabilities. The server binds `127.0.0.1` by default — only pass `--host 0.0.0.0` (or another external address) on trusted networks, ideally behind a reverse proxy with authentication.
+
 ## Development
 
 ```bash
-npm test           # unit tests (node:test)
-npm run test:smoke # stdio protocol smoke test
+npm test                # unit tests (node:test)
+npm run test:smoke      # stdio protocol smoke test
+npm run test:smoke-http # streamable-http + SSE smoke test
 ```
 
 ## License
