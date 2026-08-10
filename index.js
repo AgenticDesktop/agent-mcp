@@ -35,6 +35,17 @@ Options:
   --port <n>              Port to listen on (default: 0, a random free port
                           assigned by the OS; printed to stderr on startup)
   --host <addr>           Address to bind (default: 127.0.0.1)
+  --prompt-injection-mode <mode>
+                          How to expose the operating prompt to the AI:
+                            default     expose a named MCP prompt clients can
+                                        fetch (prompts/get) [default]
+                            instruction return the prompt in the initialize
+                                        response's instructions field
+                            tool        register an extra "init" tool whose
+                                        result is the prompt (works with any
+                                        client that consumes tools)
+                            none        inject no prompt (error-recovery
+                                        hints still apply)
 
 Transport:
   Without options, runs an MCP server over stdio. Not meant to be invoked
@@ -83,6 +94,14 @@ if (args.includes("--version") || args.includes("-v")) {
 
 const remote = args.includes("--remote");
 const transportArg = flagValue("--transport");
+const promptInjectionMode = flagValue("--prompt-injection-mode") ?? "default";
+const VALID_MODES = new Set(["default", "instruction", "tool", "none"]);
+if (!VALID_MODES.has(promptInjectionMode)) {
+	console.error(
+		`agent-mcp-for-chat: invalid --prompt-injection-mode "${promptInjectionMode}" (expected "default", "instruction", "tool", or "none")`,
+	);
+	process.exit(1);
+}
 
 if (transportArg !== undefined && !remote) {
 	console.error("agent-mcp-for-chat: --transport is only valid together with --remote");
@@ -103,7 +122,7 @@ if (remote) {
 	}
 	const host = flagValue("--host") ?? "127.0.0.1";
 
-	const { port: actualPort } = await startHttpServer({ mode, host, port });
+	const { port: actualPort } = await startHttpServer({ mode, host, port, promptInjectionMode });
 
 	const base = `http://${host}:${actualPort}`;
 	console.error(`agent-mcp-for-chat: MCP server listening on ${base}`);
@@ -113,6 +132,7 @@ if (remote) {
 		console.error(`agent-mcp-for-chat: sse endpoints: GET ${base}/sse, POST ${base}/messages`);
 	}
 	console.error("agent-mcp-for-chat: all path arguments must be absolute");
+	console.error(`agent-mcp-for-chat: prompt injection mode: ${promptInjectionMode}`);
 	if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost") {
 		console.error(
 			"agent-mcp-for-chat: WARNING: server is reachable from other machines; " +
@@ -120,7 +140,7 @@ if (remote) {
 		);
 	}
 } else {
-	const server = createAgentMcpServer();
+	const server = createAgentMcpServer({ promptInjectionMode });
 	const transport = new StdioServerTransport();
 
 	await server.connect(transport);
@@ -128,4 +148,5 @@ if (remote) {
 	// MCP servers log to stderr; stdout is reserved for the protocol.
 	console.error("agent-mcp-for-chat: MCP server running on stdio");
 	console.error("agent-mcp-for-chat: all path arguments must be absolute");
+	console.error(`agent-mcp-for-chat: prompt injection mode: ${promptInjectionMode}`);
 }

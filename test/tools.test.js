@@ -14,6 +14,7 @@ import { grepTool } from "../src/tools/grep.js";
 import { lsTool } from "../src/tools/ls.js";
 import { readTool } from "../src/tools/read.js";
 import { writeTool } from "../src/tools/write.js";
+import { getErrorHint, PROMPT_NAME, SYSTEM_PROMPT } from "../src/prompts.js";
 
 let workDir;
 
@@ -302,4 +303,71 @@ test("bash: timeout kills long-running command", async () => {
 	const hasSleep = process.platform !== "win32" || /bash/i.test(shell);
 	const cmd = hasSleep ? "sleep 10" : "ping -n 10 127.0.0.1";
 	await assert.rejects(() => bashTool.execute({ command: cmd, cwd: workDir, timeout: 1 }), /timed out after 1 seconds/);
+});
+
+// ---------- prompts / prompt injection ----------
+
+test("SYSTEM_PROMPT is a non-empty string covering key topics", () => {
+	assert.equal(typeof SYSTEM_PROMPT, "string");
+	assert.ok(SYSTEM_PROMPT.length > 100, "SYSTEM_PROMPT should be substantial");
+	// Covers the absolute-path convention.
+	assert.match(SYSTEM_PROMPT, /absolute/i);
+	// Mentions all seven tools.
+	for (const name of ["read", "write", "edit", "bash", "grep", "find", "ls"]) {
+		assert.ok(SYSTEM_PROMPT.includes(name), `SYSTEM_PROMPT should mention the "${name}" tool`);
+	}
+});
+
+test("PROMPT_NAME is a stable identifier", () => {
+	assert.equal(typeof PROMPT_NAME, "string");
+	assert.match(PROMPT_NAME, /^[a-z0-9-]+$/);
+});
+
+test("getErrorHint: returns null for unknown errors", () => {
+	assert.equal(getErrorHint("something completely unexpected"), null);
+	assert.equal(getErrorHint(""), null);
+});
+
+test("getErrorHint: relative path error", () => {
+	const hint = getErrorHint('Path must be absolute, got relative path: "src/index.ts".');
+	assert.ok(hint);
+	assert.match(hint, /absolute/i);
+});
+
+test("getErrorHint: oldText not found", () => {
+	const hint = getErrorHint("Edit 1 in file.ts: oldText not found. Make sure it matches.");
+	assert.ok(hint);
+	assert.match(hint, /exactly|whitespace|indentation/i);
+});
+
+test("getErrorHint: oldText not unique", () => {
+	const hint = getErrorHint(
+		"Edit 1 in file.ts: oldText found 3 times. It must match exactly one location.",
+	);
+	assert.ok(hint);
+	assert.match(hint, /context|unique/i);
+});
+
+test("getErrorHint: command timeout", () => {
+	const hint = getErrorHint("Command timed out after 5 seconds");
+	assert.ok(hint);
+	assert.match(hint, /timeout/i);
+});
+
+test("getErrorHint: non-zero exit code", () => {
+	const hint = getErrorHint("Command exited with code 1");
+	assert.ok(hint);
+	assert.match(hint, /exit code|syntax|working directory/i);
+});
+
+test("getErrorHint: invalid regex", () => {
+	const hint = getErrorHint("Invalid regex pattern: Unterminated group");
+	assert.ok(hint);
+	assert.match(hint, /literal/i);
+});
+
+test("getErrorHint: directory not found", () => {
+	const hint = getErrorHint("Directory not found: /nonexistent/path");
+	assert.ok(hint);
+	assert.match(hint, /exist|ls|find/i);
 });

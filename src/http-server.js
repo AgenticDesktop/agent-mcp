@@ -53,8 +53,8 @@ const JSONRPC_PARSE_ERROR = {
  * Handle a single Streamable HTTP request in stateless mode:
  * a fresh server+transport pair per request, closed when the response ends.
  */
-async function handleStreamableRequest(req, res) {
-	const server = createAgentMcpServer();
+async function handleStreamableRequest(req, res, promptInjectionMode) {
+	const server = createAgentMcpServer({ promptInjectionMode });
 	const transport = new StreamableHTTPServerTransport({
 		sessionIdGenerator: undefined,
 	});
@@ -80,9 +80,10 @@ async function handleStreamableRequest(req, res) {
  *   "sse" = legacy SSE (GET /sse + POST /messages)
  * @param {string} opts.host
  * @param {number} opts.port - 0 means the OS assigns a free port
+ * @param {"default"|"instruction"|"tool"|"none"} [opts.promptInjectionMode="default"]
  * @returns {Promise<{server: import("node:http").Server, port: number, host: string}>}
  */
-export async function startHttpServer({ mode, host, port }) {
+export async function startHttpServer({ mode, host, port, promptInjectionMode = "default" }) {
 	/** @type {Map<string, SSEServerTransport>} sessionId -> transport (sse mode) */
 	const sseTransports = new Map();
 
@@ -92,7 +93,7 @@ export async function startHttpServer({ mode, host, port }) {
 
 			if (mode === "http") {
 				if (url.pathname === "/mcp") {
-					await handleStreamableRequest(req, res);
+					await handleStreamableRequest(req, res, promptInjectionMode);
 				} else {
 					sendJson(res, 404, { error: "not found" });
 				}
@@ -101,7 +102,7 @@ export async function startHttpServer({ mode, host, port }) {
 
 			// mode === "sse"
 			if (url.pathname === "/sse" && req.method === "GET") {
-				const mcpServer = createAgentMcpServer();
+				const mcpServer = createAgentMcpServer({ promptInjectionMode });
 				const transport = new SSEServerTransport("/messages", res);
 				sseTransports.set(transport.sessionId, transport);
 				transport.onclose = () => {

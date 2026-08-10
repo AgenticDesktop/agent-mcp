@@ -6,21 +6,42 @@ import { grepTool } from "./tools/grep.js";
 import { lsTool } from "./tools/ls.js";
 import { readTool } from "./tools/read.js";
 import { writeTool } from "./tools/write.js";
+import {
+	getErrorHint,
+	PROMPT_DESCRIPTION,
+	PROMPT_NAME,
+	SYSTEM_PROMPT,
+} from "./prompts.js";
 
 const TOOLS = [readTool, writeTool, editTool, bashTool, grepTool, findTool, lsTool];
 
+const SERVER_INFO = {
+	name: "agent-mcp-for-chat",
+	version: "0.1.0",
+};
+
 /**
  * Create the MCP server with all agent tools registered.
+ *
  * Tool handler convention: each tool module exposes
  *   { name, description, schema (zod raw shape), execute(args) }
  * execute() returns { text } or { text, image: {data, mimeType} } and throws
  * Error with a user-facing message on failure (reported as isError content).
+ *
+ * @param {object} [options]
+ * @param {"default"|"instruction"|"tool"|"none"} [options.promptInjectionMode="default"]
+ *   - "default": expose a named MCP prompt clients can fetch via prompts/get.
+ *   - "instruction": return the prompt in the initialize response's
+ *     `instructions` field (clients that honor it inject it as system message).
+ *   - "tool": register an extra `init` tool whose result is the prompt text
+ *     (works with any client that consumes tools).
+ *   - "none": inject no prompt at all (only error-recovery hints remain).
+ *   In every mode, tool errors are appended a "[提示] ..." recovery hint.
  */
-export function createAgentMcpServer() {
-	const server = new McpServer({
-		name: "agent-mcp-for-chat",
-		version: "0.1.0",
-	});
+export function createAgentMcpServer({ promptInjectionMode = "default" } = {}) {
+	const serverOptions =
+		promptInjectionMode === "instruction" ? { instructions: SYSTEM_PROMPT } : {};
+	const server = new McpServer(SERVER_INFO, serverOptions);
 
 	for (const tool of TOOLS) {
 		server.registerTool(
@@ -46,9 +67,40 @@ export function createAgentMcpServer() {
 					return { content };
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
-					return { content: [{ type: "text", text: message }], isError: true };
+					const hint = getErrorHint(message);
+					const text = hint ? `${message}\n\n[提示] ${hint}` : message;
+					return { content: [{ type: "text", text }], isError: true };
 				}
 			},
+		);
+	}
+
+	if (promptInjectionMode === "tool") {
+		server.registerTool(
+			"init",
+			{
+				description:
+					"Retrieve the operating instructions for the agent-mcp-for-chat tool server. " +
+					"Call this once at the start of a session to learn the path conventions, " +
+					"per-tool usage rules, and common pitfalls before using any other tool.",
+				inputSchema: {},
+			},
+			async () => ({ content: [{ type: "text", text: SYSTEM_PROMPT }] }),
+		);
+	}
+
+	if (promptInjectionMode === "default") {
+		server.registerPrompt(
+			PROMPT_NAME,
+			{ title: "Agent Instructions", description: PROMPT_DESCRIPTION },
+			async () => ({
+				messages: [
+					{
+						role: "user",
+						content: { type: "text", text: SYSTEM_PROMPT },
+					},
+				],
+			}),
 		);
 	}
 

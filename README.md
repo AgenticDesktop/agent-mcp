@@ -41,7 +41,36 @@ npx @shihaoshen/agent-mcp-for-chat --remote --port 8080
 npx @shihaoshen/agent-mcp-for-chat --remote --host 0.0.0.0   # see Security
 ```
 
-Options: `--remote`, `--transport http|sse` (only with `--remote`), `--port <n>` (default `0` = OS-assigned free port), `--host <addr>` (default `127.0.0.1`).
+Options: `--remote`, `--transport http|sse` (only with `--remote`), `--port <n>` (default `0` = OS-assigned free port), `--host <addr>` (default `127.0.0.1`), `--prompt-injection-mode <mode>` (default `default`).
+
+## Prompt Injection
+
+General-purpose chat AIs (ChatGPT, Claude, Gemini, ...) connected via MCP often misuse tools on the first try: relative paths, ambiguous `edit` matches, wrong `cwd`, etc. `--prompt-injection-mode` lets the server push operating instructions to the AI so it works correctly out of the box. Four mutually-exclusive modes:
+
+| Mode | How the prompt reaches the AI | Client support required |
+|------|-------------------------------|-------------------------|
+| `default` (no flag) | Exposes a named MCP prompt (`agent-instructions`) the client can fetch via `prompts/get`. | Client must implement MCP `prompts`. |
+| `instruction` | Returns the prompt in the `initialize` response's `instructions` field; clients that honor it inject it as a system message. | Client must read the `instructions` field. |
+| `tool` | Registers an extra `init` tool. The AI calls `init`, receives the prompt text, and acts on it. | Any client that consumes tools — the most compatible. |
+| `none` | No prompt is injected at all. | — |
+
+In every mode (including `none`), tool errors are appended a `[提示] ...` (hint) section with specific recovery guidance for that error class (relative path, non-unique `oldText`, command timeout, etc.).
+
+```bash
+# Default: expose MCP prompt
+npx @shihaoshen/agent-mcp-for-chat
+
+# Works with any tool-consuming client
+npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode tool
+
+# Push instructions at handshake (Claude Desktop, Cursor, ...)
+npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode instruction
+
+# No prompt injection; error hints only
+npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode none
+```
+
+The injected prompt documents the absolute-path convention, the seven tools' usage rules, and common pitfalls. Error hints cover 16 known error patterns and are appended automatically to `isError` tool results.
 
 ## Client Configuration
 
