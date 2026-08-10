@@ -14,7 +14,7 @@ import { grepTool } from "../src/tools/grep.js";
 import { lsTool } from "../src/tools/ls.js";
 import { readTool } from "../src/tools/read.js";
 import { writeTool } from "../src/tools/write.js";
-import { getErrorHint, PROMPT_NAME, SYSTEM_PROMPT } from "../src/prompts.js";
+import { getErrorHint, PROMPT_NAME, RESOURCE_URI, SYSTEM_PROMPT } from "../src/prompts.js";
 
 let workDir;
 
@@ -321,6 +321,12 @@ test("SYSTEM_PROMPT is a non-empty string covering key topics", () => {
 test("PROMPT_NAME is a stable identifier", () => {
 	assert.equal(typeof PROMPT_NAME, "string");
 	assert.match(PROMPT_NAME, /^[a-z0-9-]+$/);
+});
+
+test("RESOURCE_URI is a valid URI with custom scheme", () => {
+	assert.equal(typeof RESOURCE_URI, "string");
+	assert.match(RESOURCE_URI, /^[a-z][a-z0-9+.-]*:\/\//);
+	assert.ok(RESOURCE_URI.includes("agent-mcp"));
 });
 
 test("getErrorHint: returns null for unknown errors", () => {

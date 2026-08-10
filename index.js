@@ -37,13 +37,15 @@ Options:
   --host <addr>           Address to bind (default: 127.0.0.1)
   --prompt-injection-mode <mode>
                           How to expose the operating prompt to the AI:
-                            default     expose a named MCP prompt clients can
-                                        fetch (prompts/get) [default]
-                            instruction return the prompt in the initialize
-                                        response's instructions field
-                            tool        register an extra "init" tool whose
+                            default     return the prompt in the initialize
+                                        response's instructions field [default]
+                            compatible  register an extra "init" tool whose
                                         result is the prompt (works with any
                                         client that consumes tools)
+                            prompt      expose a named MCP prompt clients can
+                                        fetch (prompts/get)
+                            resource    expose the prompt as an MCP resource
+                                        (resources/read)
                             none        inject no prompt (error-recovery
                                         hints still apply)
 
@@ -95,10 +97,10 @@ if (args.includes("--version") || args.includes("-v")) {
 const remote = args.includes("--remote");
 const transportArg = flagValue("--transport");
 const promptInjectionMode = flagValue("--prompt-injection-mode") ?? "default";
-const VALID_MODES = new Set(["default", "instruction", "tool", "none"]);
+const VALID_MODES = new Set(["default", "compatible", "prompt", "resource", "none"]);
 if (!VALID_MODES.has(promptInjectionMode)) {
 	console.error(
-		`agent-mcp-for-chat: invalid --prompt-injection-mode "${promptInjectionMode}" (expected "default", "instruction", "tool", or "none")`,
+		`agent-mcp-for-chat: invalid --prompt-injection-mode "${promptInjectionMode}" (expected "default", "compatible", "prompt", "resource", or "none")`,
 	);
 	process.exit(1);
 }

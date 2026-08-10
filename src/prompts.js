@@ -6,8 +6,11 @@
  * tool error returns in every mode (including none).
  */
 
-/** Name of the prompt exposed in `default` mode via MCP prompts capability. */
+/** Name of the prompt exposed in `prompt` mode via MCP prompts capability. */
 export const PROMPT_NAME = "agent-instructions";
+
+/** URI of the resource exposed in `resource` mode via MCP resources capability. */
+export const RESOURCE_URI = "agent-mcp://instructions";
 
 /** Description shown to MCP clients when listing available prompts. */
 export const PROMPT_DESCRIPTION =
@@ -81,7 +84,7 @@ List directory entries.
 5. grep "Invalid regex pattern" -> set literal: true for plain-string searches.
 6. read offset beyond file length -> read without offset first to learn the file size.
 
-When a tool returns an error, a "[提示] ..." (hint) section is appended with specific recovery guidance. Follow it before retrying.`;
+When a tool returns an error, a "[HINT] ..." section is appended with specific recovery guidance. Follow it before retrying.`;
 
 /**
  * Error-to-hint mapping. Each entry is tested in order; the first match wins.

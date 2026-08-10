@@ -45,26 +45,38 @@ Options: `--remote`, `--transport http|sse` (only with `--remote`), `--port <n>`
 
 ## Prompt Injection
 
-General-purpose chat AIs (ChatGPT, Claude, Gemini, ...) connected via MCP often misuse tools on the first try: relative paths, ambiguous `edit` matches, wrong `cwd`, etc. `--prompt-injection-mode` lets the server push operating instructions to the AI so it works correctly out of the box. Four mutually-exclusive modes:
+General-purpose chat AIs (ChatGPT, Claude, Gemini, ...) connected via MCP often misuse tools on the first try: relative paths, ambiguous `edit` matches, wrong `cwd`, etc. `--prompt-injection-mode` lets the server push operating instructions to the AI so it works correctly out of the box. Five mutually-exclusive modes:
 
 | Mode | How the prompt reaches the AI | Client support required |
 |------|-------------------------------|-------------------------|
-| `default` (no flag) | Exposes a named MCP prompt (`agent-instructions`) the client can fetch via `prompts/get`. | Client must implement MCP `prompts`. |
-| `instruction` | Returns the prompt in the `initialize` response's `instructions` field; clients that honor it inject it as a system message. | Client must read the `instructions` field. |
-| `tool` | Registers an extra `init` tool. The AI calls `init`, receives the prompt text, and acts on it. | Any client that consumes tools — the most compatible. |
+| `default` (no flag) | Returns the prompt in the `initialize` response's `instructions` field; clients that honor it inject it as a system message. | Client must read the `instructions` field. |
+| `compatible` | Registers an extra `init` tool. The AI calls `init`, receives the prompt text, and acts on it. | Any client that consumes tools — the most compatible. |
+| `prompt` | Exposes a named MCP prompt (`agent-instructions`) the client can fetch via `prompts/get`. | Client must implement MCP `prompts`. |
+| `resource` | Exposes the prompt as an MCP resource (`agent-mcp://instructions`) the client can fetch via `resources/read`. | Client must implement MCP `resources`. |
 | `none` | No prompt is injected at all. | — |
 
-In every mode (including `none`), tool errors are appended a `[提示] ...` (hint) section with specific recovery guidance for that error class (relative path, non-unique `oldText`, command timeout, etc.).
+**Client compatibility notes:**
+
+- **Claude Desktop does NOT support MCP `prompts`.** Use `default` (instructions), `compatible` (init tool), or `resource` instead.
+- The `default` mode works with Claude Desktop and other clients that read the `initialize` response's `instructions` field.
+- The `compatible` mode works with every MCP client that can call tools — the widest coverage.
+- The `prompt` mode requires clients like Cline, Continue, or custom integrations that explicitly call `prompts/get`.
+- The `resource` mode requires clients that call `resources/read`.
+
+In every mode (including `none`), tool errors are appended a `[HINT] ...` section with specific recovery guidance for that error class (relative path, non-unique `oldText`, command timeout, etc.).
 
 ```bash
-# Default: expose MCP prompt
+# Default: instructions field in initialize response
 npx @shihaoshen/agent-mcp-for-chat
 
 # Works with any tool-consuming client
-npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode tool
+npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode compatible
 
-# Push instructions at handshake (Claude Desktop, Cursor, ...)
-npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode instruction
+# Expose via MCP prompts/get (Cline, Continue, ...)
+npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode prompt
+
+# Expose via MCP resources/read
+npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode resource
 
 # No prompt injection; error hints only
 npx @shihaoshen/agent-mcp-for-chat --prompt-injection-mode none

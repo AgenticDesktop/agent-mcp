@@ -10,6 +10,7 @@ import {
 	getErrorHint,
 	PROMPT_DESCRIPTION,
 	PROMPT_NAME,
+	RESOURCE_URI,
 	SYSTEM_PROMPT,
 } from "./prompts.js";
 
@@ -29,18 +30,20 @@ const SERVER_INFO = {
  * Error with a user-facing message on failure (reported as isError content).
  *
  * @param {object} [options]
- * @param {"default"|"instruction"|"tool"|"none"} [options.promptInjectionMode="default"]
- *   - "default": expose a named MCP prompt clients can fetch via prompts/get.
- *   - "instruction": return the prompt in the initialize response's
+ * @param {"default"|"compatible"|"prompt"|"resource"|"none"} [options.promptInjectionMode="default"]
+ *   - "default": return the prompt in the initialize response's
  *     `instructions` field (clients that honor it inject it as system message).
- *   - "tool": register an extra `init` tool whose result is the prompt text
- *     (works with any client that consumes tools).
+ *   - "compatible": register an extra `init` tool whose result is the prompt
+ *     text (works with any client that consumes tools).
+ *   - "prompt": expose a named MCP prompt clients can fetch via prompts/get.
+ *   - "resource": expose the prompt as an MCP resource clients can fetch via
+ *     resources/read.
  *   - "none": inject no prompt at all (only error-recovery hints remain).
- *   In every mode, tool errors are appended a "[提示] ..." recovery hint.
+ *   In every mode, tool errors are appended a "[HINT] ..." recovery hint.
  */
 export function createAgentMcpServer({ promptInjectionMode = "default" } = {}) {
 	const serverOptions =
-		promptInjectionMode === "instruction" ? { instructions: SYSTEM_PROMPT } : {};
+		promptInjectionMode === "default" ? { instructions: SYSTEM_PROMPT } : {};
 	const server = new McpServer(SERVER_INFO, serverOptions);
 
 	for (const tool of TOOLS) {
@@ -68,14 +71,14 @@ export function createAgentMcpServer({ promptInjectionMode = "default" } = {}) {
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					const hint = getErrorHint(message);
-					const text = hint ? `${message}\n\n[提示] ${hint}` : message;
+					const text = hint ? `${message}\n\n[HINT] ${hint}` : message;
 					return { content: [{ type: "text", text }], isError: true };
 				}
 			},
 		);
 	}
 
-	if (promptInjectionMode === "tool") {
+	if (promptInjectionMode === "compatible") {
 		server.registerTool(
 			"init",
 			{
@@ -89,7 +92,7 @@ export function createAgentMcpServer({ promptInjectionMode = "default" } = {}) {
 		);
 	}
 
-	if (promptInjectionMode === "default") {
+	if (promptInjectionMode === "prompt") {
 		server.registerPrompt(
 			PROMPT_NAME,
 			{ title: "Agent Instructions", description: PROMPT_DESCRIPTION },
@@ -98,6 +101,27 @@ export function createAgentMcpServer({ promptInjectionMode = "default" } = {}) {
 					{
 						role: "user",
 						content: { type: "text", text: SYSTEM_PROMPT },
+					},
+				],
+			}),
+		);
+	}
+
+	if (promptInjectionMode === "resource") {
+		server.registerResource(
+			PROMPT_NAME,
+			RESOURCE_URI,
+			{
+				title: "Agent Instructions",
+				description: PROMPT_DESCRIPTION,
+				mimeType: "text/markdown",
+			},
+			async (uri) => ({
+				contents: [
+					{
+						uri: uri.href,
+						mimeType: "text/markdown",
+						text: SYSTEM_PROMPT,
 					},
 				],
 			}),
